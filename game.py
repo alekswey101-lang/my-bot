@@ -16,7 +16,7 @@ logging.basicConfig(
 )
 
 TOKEN      = os.environ.get("TOKEN", "7760629170:AAEAWQqt16McVaCZ2d0FDQhS-8EGDcTBc7k")
-GEMINI_KEY = os.environ.get("GEMINI_KEY", AIzaSyAub0Pg0yw2xZK_NxKFEgK_ZGLYc8xjL5I")
+GEMINI_KEY = os.environ.get("GEMINI_KEY", "AIzaSyAub0Pg0yw2xZK_NxKFEgK_ZGLYc8xjL5I")
 ADMIN_ID   = 5243426946  # <-- вставь свой Telegram ID (узнай у @userinfobot)
 
 # ── Gemini AI ─────────────────────────────────────────────────────────────────
