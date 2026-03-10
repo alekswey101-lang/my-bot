@@ -20,7 +20,7 @@ GEMINI_KEY = os.environ.get("AIzaSyD2SENpXFL-lnLroCCiq8Z1qDonlM9xCJc")
 ADMIN_ID   = 5243426946  # <-- вставь свой Telegram ID (узнай у @userinfobot)
 
 # ── Gemini AI ─────────────────────────────────────────────────────────────────
-genai.configure(api_key=GEMINI_KEY)
+genai.configure(api_key=AIzaSyD2SENpXFL-lnLroCCiq8Z1qDonlM9xCJc)
 gemini_model = genai.GenerativeModel(
     model_name="gemini-1.5-flash",
     system_instruction=(
