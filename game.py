@@ -15,9 +15,9 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-TOKEN      = os.environ.get("7760629170:AAEAWQqt16McVaCZ2d0FDQhS-8EGDcTBc7k")
-GEMINI_KEY = os.environ.get("AIzaSyD2SENpXFL-lnLroCCiq8Z1qDonlM9xCJc")
-ADMIN_ID   = 5243426946  # <-- вставь свой Telegram ID (узнай у @userinfobot)
+TOKEN      = os.environ.get("BOT_TOKEN")
+GEMINI_KEY = os.environ.get("GEMINI_KEY")
+ADMIN_ID   = int(os.environ.get("ADMIN_ID", "0"))
 
 # ── Gemini AI ─────────────────────────────────────────────────────────────────
 genai.configure(api_key=AIzaSyD2SENpXFL-lnLroCCiq8Z1qDonlM9xCJc)
