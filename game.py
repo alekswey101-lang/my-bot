@@ -20,16 +20,22 @@ GEMINI_KEY = os.environ.get("GEMINI_KEY")
 ADMIN_ID   = int(os.environ.get("ADMIN_ID", "0"))
 
 # ── Gemini AI ─────────────────────────────────────────────────────────────────
-genai.configure(api_key=GEMINI_KEY)
-gemini_model = genai.GenerativeModel(
-    model_name="gemini-1.5-flash",
-    system_instruction=(
-        "Ты помощник в игровом Telegram боте. "
-        "Отвечай коротко, по-русски, дружелюбно. "
-        "Можешь давать советы по играм (слоты, рулетка, сапёр, кубик). "
-        "Не используй Markdown разметку в ответах."
+client = genai.Client(api_key=GEMINI_KEY)
+
+async def ask_gemini(text: str) -> str:
+    response = client.models.generate_content(
+        model="gemini-2.0-flash",
+        contents=text,
+        config=genai.types.GenerateContentConfig(
+            system_instruction=(
+                "Ты помощник в игровом Telegram боте. "
+                "Отвечай коротко, по-русски, дружелюбно. "
+                "Можешь давать советы по играм (слоты, рулетка, сапёр, кубик). "
+                "Не используй Markdown разметку в ответах."
+            )
+        )
     )
-)
+    return response.text
 
 # ── База данных ───────────────────────────────────────────────────────────────
 DB_FILE = "users.json"
