@@ -20,7 +20,7 @@ GEMINI_KEY = os.environ.get("GEMINI_KEY")
 ADMIN_ID   = int(os.environ.get("ADMIN_ID", "0"))
 
 # ── Gemini AI ─────────────────────────────────────────────────────────────────
-genai.configure(api_key=AIzaSyD2SENpXFL-lnLroCCiq8Z1qDonlM9xCJc)
+genai.configure(api_key=GEMINI_KEY)
 gemini_model = genai.GenerativeModel(
     model_name="gemini-1.5-flash",
     system_instruction=(
