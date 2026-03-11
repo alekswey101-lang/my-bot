@@ -8,7 +8,7 @@ from telegram.ext import (
     ApplicationBuilder, CommandHandler, CallbackQueryHandler,
     ContextTypes
 )
-import google.generativeai as genai
+import google.genai as genai
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -221,7 +221,6 @@ async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if check_ban(user_id):
         return
-
     text = " ".join(context.args)
     if not text:
         await update.message.reply_text(
@@ -229,13 +228,12 @@ async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
         return
-
     thinking = await update.message.reply_text("🤖 Думаю...")
     try:
-        response = gemini_model.generate_content(text)
-        answer = response.text[:4000]
-        await thinking.edit_text(f"🤖 *ИИ отвечает:*\n\n{answer}", parse_mode="Markdown")
+        answer = await ask_gemini(text)
+        await thinking.edit_text(f"🤖 *ИИ отвечает:*\n\n{answer[:4000]}", parse_mode="Markdown")
     except Exception as e:
+        logging.error(f"Gemini error: {e}")
         await thinking.edit_text("❌ Ошибка ИИ. Попробуй позже.")
 
 # 💣 Мины
