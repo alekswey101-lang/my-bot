@@ -2,6 +2,7 @@ import logging
 import random
 import json
 import os
+import asyncio
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -14,6 +15,7 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
+logger = logging.getLogger(__name__)
 
 TOKEN      = os.environ.get("BOT_TOKEN")
 GEMINI_KEY = os.environ.get("GEMINI_KEY")
@@ -23,15 +25,19 @@ ADMIN_ID   = int(os.environ.get("ADMIN_ID", "0"))
 client = genai.Client(api_key=GEMINI_KEY)
 
 async def ask_gemini(text: str) -> str:
-    response = client.models.generate_content(
-        model="gemini-2.0-flash",
-        contents=text,
-        config=genai.types.GenerateContentConfig(
-            system_instruction=(
-                "Ты помощник в игровом Telegram боте. "
-                "Отвечай коротко, по-русски, дружелюбно. "
-                "Можешь давать советы по играм (слоты, рулетка, сапёр, кубик). "
-                "Не используй Markdown разметку в ответах."
+    loop = asyncio.get_event_loop()
+    response = await loop.run_in_executor(
+        None,
+        lambda: client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=text,
+            config=genai.types.GenerateContentConfig(
+                system_instruction=(
+                    "Ты помощник в игровом Telegram боте. "
+                    "Отвечай коротко, по-русски, дружелюбно. "
+                    "Можешь давать советы по играм (слоты, рулетка, сапёр, кубик). "
+                    "Не используй Markdown разметку в ответах."
+                )
             )
         )
     )
@@ -107,21 +113,21 @@ def build_game_keyboard(board, revealed: set, game_over: bool) -> InlineKeyboard
 # ── Клавиатуры ────────────────────────────────────────────────────────────────
 def main_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("👤 Профиль",    callback_data="profile"),
-         InlineKeyboardButton("💰 Баланс",     callback_data="balance")],
-        [InlineKeyboardButton("🎮 Мини-игры",  callback_data="minigames")],
+        [InlineKeyboardButton("👤 Профиль",     callback_data="profile"),
+         InlineKeyboardButton("💰 Баланс",      callback_data="balance")],
+        [InlineKeyboardButton("🎮 Мини-игры",   callback_data="minigames")],
         [InlineKeyboardButton("🤖 Спросить ИИ", callback_data="ai_help")],
     ])
 
 def minigames_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("💣 Мины",         callback_data="info_mines"),
-         InlineKeyboardButton("🎲 Кубик",        callback_data="info_dice")],
-        [InlineKeyboardButton("🎰 Слоты",        callback_data="info_slots"),
-         InlineKeyboardButton("🎡 Рулетка",      callback_data="info_roulette")],
-        [InlineKeyboardButton("3️⃣ Тройка",       callback_data="info_triple"),
-         InlineKeyboardButton("🃏 Карта",        callback_data="info_card")],
-        [InlineKeyboardButton("🔙 Назад",        callback_data="main_menu")],
+        [InlineKeyboardButton("💣 Мины",    callback_data="info_mines"),
+         InlineKeyboardButton("🎲 Кубик",   callback_data="info_dice")],
+        [InlineKeyboardButton("🎰 Слоты",   callback_data="info_slots"),
+         InlineKeyboardButton("🎡 Рулетка", callback_data="info_roulette")],
+        [InlineKeyboardButton("3️⃣ Тройка",  callback_data="info_triple"),
+         InlineKeyboardButton("🃏 Карта",   callback_data="info_card")],
+        [InlineKeyboardButton("🔙 Назад",   callback_data="main_menu")],
     ])
 
 def back_keyboard() -> InlineKeyboardMarkup:
@@ -169,6 +175,7 @@ def apply_result(user_id: int, bet: int, won: bool, multiplier: float = 2.0):
 # ── КОМАНДЫ ───────────────────────────────────────────────────────────────────
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
+    logger.info(f"[START] {user.id} ({user.username})")
     if check_ban(user.id):
         await update.message.reply_text("🚫 Вы заблокированы.")
         return
@@ -211,6 +218,7 @@ async def bonus(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
     new_balance = u["balance"] + 50
     update_user(user_id, {"balance": new_balance, "last_bonus": datetime.now().isoformat()})
+    logger.info(f"[BONUS] {user_id} получил 50 монет, баланс: {new_balance}")
     await update.message.reply_text(
         f"🎁 Вы получили *50* монет!\nБаланс: *{new_balance}* монет 🪙\n\n_Следующий бонус через 24 часа_",
         parse_mode="Markdown", reply_markup=main_menu_keyboard(),
@@ -228,13 +236,15 @@ async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
         return
+    logger.info(f"[AI] {user_id} спросил: {text}")
     thinking = await update.message.reply_text("🤖 Думаю...")
     try:
         answer = await ask_gemini(text)
+        logger.info(f"[AI] Ответ получен для {user_id}")
         await thinking.edit_text(f"🤖 *ИИ отвечает:*\n\n{answer[:4000]}", parse_mode="Markdown")
     except Exception as e:
-        logging.error(f"Gemini error: {e}")
-        await thinking.edit_text("❌ Ошибка ИИ. Попробуй позже.")
+        logger.error(f"[AI ERROR] user={user_id} error={e}", exc_info=True)
+        await thinking.edit_text(f"❌ Ошибка ИИ: `{str(e)[:200]}`", parse_mode="Markdown")
 
 # 💣 Мины
 async def game_mines_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -251,6 +261,7 @@ async def game_mines_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }
     update_user(user_id, {"balance": get_user(user_id)["balance"] - bet})
     safe = BOARD_SIZE * BOARD_SIZE - BOMB_COUNT
+    logger.info(f"[MINES] {user_id} ставка {bet}")
     await update.message.reply_text(
         f"💣 *Сапёр!*\n\nСтавка: *{bet}* монет\nОткрой все *{safe}* клеток → *{bet*2}* монет!",
         parse_mode="Markdown",
@@ -290,6 +301,7 @@ async def game_dice_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = f"🎲 Выпало: {emoji}\n\n" + (f"🎉 *Выиграл {win} монет! (×1.8)*\nБаланс: *{nb}*" if win else f"😢 Не повезло!\nПотеряно: *{bet}*. Баланс: *{nb}*")
     else:
         await update.message.reply_text("🎲 `/dice [1-6] [ставка]` или `/dice [ставка]`", parse_mode="Markdown"); return
+    logger.info(f"[DICE] {user_id}")
     await update.message.reply_text(text, parse_mode="Markdown", reply_markup=play_again_keyboard("info_dice"))
 
 # 🎰 Слоты
@@ -320,6 +332,7 @@ async def game_slots_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         update_user(user_id, {"losses": u["losses"]+1, "games_played": u["games_played"]+1})
         text = f"🎰 {line}\n\n😢 *Проиграл {bet} монет.*\nБаланс: *{u['balance']}*"
+    logger.info(f"[SLOTS] {user_id} → {line}")
     await update.message.reply_text(text, parse_mode="Markdown", reply_markup=play_again_keyboard("info_slots"))
 
 # 🎡 Рулетка
@@ -357,6 +370,7 @@ async def game_roulette_spin(update: Update, context: ContextTypes.DEFAULT_TYPE)
         nb = u["balance"] + win
         update_user(user_id, {"balance": nb, "wins": u["wins"]+1, "games_played": u["games_played"]+1})
         text = f"🎡 Выпало: *{name}*\n\n🎉 Выиграл *{win}* монет! (×{mult})\nБаланс: *{nb}*"
+    logger.info(f"[ROULETTE] {user_id} → {name}")
     await update.message.reply_text(text, parse_mode="Markdown", reply_markup=play_again_keyboard("info_roulette"))
 
 # 3️⃣ Тройка
@@ -374,6 +388,7 @@ async def game_triple_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     win, nb = apply_result(user_id, bet, total >= 11, 1.9)
     text = (f"3️⃣ {ds}\nСумма: *{total}*\n\n" +
             (f"🎉 Выиграл *{win}* монет! (×1.9)\nБаланс: *{nb}*" if win else f"😢 Потеряно *{bet}* монет.\nБаланс: *{nb}*"))
+    logger.info(f"[TRIPLE] {user_id} сумма={total}")
     await update.message.reply_text(text, parse_mode="Markdown", reply_markup=play_again_keyboard("info_triple"))
 
 # 🃏 Карта
@@ -399,6 +414,7 @@ async def game_card_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     win, nb = apply_result(user_id, bet, card == guess, 13.0)
     text = (f"🃏 Загадана *{CARDS[card]}*\n\n" +
             (f"🎉 Угадал! *+{win} монет (×13)*\nБаланс: *{nb}*" if win else f"😢 Не угадал (ставил {CARDS[guess]})\nПотеряно: *{bet}*. Баланс: *{nb}*"))
+    logger.info(f"[CARD] {user_id} угадал={card==guess}")
     await update.message.reply_text(text, parse_mode="Markdown", reply_markup=play_again_keyboard("info_card"))
 
 # ── АДМИН ─────────────────────────────────────────────────────────────────────
@@ -413,6 +429,7 @@ async def admin_give(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ /give <id> <сумма>"); return
     nb = get_user(tid)["balance"] + amount
     update_user(tid, {"balance": nb})
+    logger.info(f"[ADMIN] give {amount} → {tid}")
     await update.message.reply_text(f"✅ Выдано *{amount}* → `{tid}`. Баланс: *{nb}*", parse_mode="Markdown")
 
 async def admin_take(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -424,6 +441,7 @@ async def admin_take(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ /take <id> <сумма>"); return
     nb = max(0, get_user(tid)["balance"] - amount)
     update_user(tid, {"balance": nb})
+    logger.info(f"[ADMIN] take {amount} ← {tid}")
     await update.message.reply_text(f"✅ Забрано *{amount}* у `{tid}`. Баланс: *{nb}*", parse_mode="Markdown")
 
 async def admin_ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -433,7 +451,9 @@ async def admin_ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tid = int(context.args[0])
     except:
         await update.message.reply_text("⚠️ /ban <id>"); return
-    get_user(tid); update_user(tid, {"banned": True})
+    get_user(tid)
+    update_user(tid, {"banned": True})
+    logger.info(f"[ADMIN] ban {tid}")
     await update.message.reply_text(f"🚫 `{tid}` заблокирован.", parse_mode="Markdown")
 
 async def admin_unban(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -444,6 +464,7 @@ async def admin_unban(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         await update.message.reply_text("⚠️ /unban <id>"); return
     update_user(tid, {"banned": False})
+    logger.info(f"[ADMIN] unban {tid}")
     await update.message.reply_text(f"✅ `{tid}` разблокирован.", parse_mode="Markdown")
 
 async def admin_players(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -466,6 +487,7 @@ async def admin_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         await update.message.reply_text("⚠️ /reset <id>"); return
     update_user(tid, {"wins": 0, "losses": 0, "games_played": 0})
+    logger.info(f"[ADMIN] reset stats {tid}")
     await update.message.reply_text(f"✅ Статистика `{tid}` сброшена.", parse_mode="Markdown")
 
 # ── КНОПКИ ────────────────────────────────────────────────────────────────────
@@ -530,7 +552,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(hints.get(data, "?"),
             parse_mode="Markdown", reply_markup=back_keyboard())
 
-    # ── Сапёр ──────────────────────────────────────────────────────────────
     elif data.startswith("mine_") and data != "mine_cashout":
         parts = data.split("_")
         r, c = int(parts[1]), int(parts[2])
@@ -546,6 +567,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             u = get_user(user_id)
             update_user(user_id, {"losses": u["losses"]+1, "games_played": u["games_played"]+1})
             del sessions[user_id]
+            logger.info(f"[MINES] {user_id} — БОМБА, потерял {bet}")
             await query.edit_message_text(
                 f"💥 *БОМБА!*\n\nСтавка *{bet}* сгорела 😢\nБаланс: *{get_user(user_id)['balance']}*",
                 parse_mode="Markdown", reply_markup=build_game_keyboard(board, revealed, True))
@@ -557,12 +579,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             nb = u["balance"] + win
             update_user(user_id, {"balance": nb, "wins": u["wins"]+1, "games_played": u["games_played"]+1})
             del sessions[user_id]
+            logger.info(f"[MINES] {user_id} — ПОБЕДА, выиграл {win}")
             await query.edit_message_text(
                 f"🏆 *ПОБЕДА!*\n\nВыигрыш: *{win}* монет (×2) 🎉\nБаланс: *{nb}*",
                 parse_mode="Markdown",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("🎮 Снова", callback_data="info_mines")],
-                    [InlineKeyboardButton("🏠 Меню", callback_data="main_menu")],
+                    [InlineKeyboardButton("🏠 Меню",  callback_data="main_menu")],
                 ]))
             return
         session["revealed"] = revealed
@@ -582,16 +605,26 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         nb = u["balance"] + win
         update_user(user_id, {"balance": nb, "wins": u["wins"]+1, "games_played": u["games_played"]+1})
         del sessions[user_id]
+        logger.info(f"[MINES] {user_id} — CASHOUT {win}")
         await query.edit_message_text(
             f"💵 *Выигрыш забран!*\n\nОткрыто: *{len(revealed)}* из {safe}\nПолучено: *{win}* монет\nБаланс: *{nb}*",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🎮 Снова", callback_data="info_mines")],
-                [InlineKeyboardButton("🏠 Меню", callback_data="main_menu")],
+                [InlineKeyboardButton("🏠 Меню",  callback_data="main_menu")],
             ]))
 
 # ── ЗАПУСК ────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
+    if not TOKEN:
+        logger.critical("BOT_TOKEN не задан!")
+        exit(1)
+    if not GEMINI_KEY:
+        logger.critical("GEMINI_KEY не задан!")
+        exit(1)
+    if not ADMIN_ID:
+        logger.warning("ADMIN_ID не задан, админ-команды недоступны")
+
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start",    start))
@@ -612,5 +645,5 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("reset",    admin_reset))
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("✅ Бот с ИИ запущен!")
+    logger.info("✅ Бот запущен!")
     app.run_polling()
